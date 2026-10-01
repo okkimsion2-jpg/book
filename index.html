@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="책 추첨기">
+<link rel="manifest" href="manifest.json">
+<title>공유 책 랜덤 추첨기</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172033;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:1050px;margin:auto;padding:22px 16px 50px}h1{margin:0;font-size:29px}.sub{color:#667085;margin:6px 0 18px}
+.card{background:#fff;border:1px solid #e6e8ee;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 5px 20px #00000008}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}.tab{background:#eef1f6;color:#344054}.tab.on{background:#111827;color:#fff}
+button{border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer;font-size:14px}button:disabled{opacity:.45}
+.primary{background:#111827;color:#fff}.green{background:#dcfce7;color:#166534}.danger{background:#fee2e2;color:#991b1b}.gray{background:#eef1f6;color:#344054}
+input{border:1px solid #d0d5dd;border-radius:10px;padding:11px;font-size:15px;min-width:0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.stat{background:#f8fafc;border-radius:12px;padding:13px}.stat b{font-size:25px;display:block}
+.winner{min-height:150px;margin:15px 0;border-radius:15px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px}.winner.empty{color:#98a2b3}
+.book{font-size:29px;font-weight:800}.author{color:#667085;margin-top:6px}.muted{color:#667085;font-size:13px}
+.drop{border:2px dashed #cbd5e1;border-radius:13px;padding:22px;text-align:center;background:#fafbfc;cursor:pointer}.drop.drag{background:#eef2ff;border-color:#6366f1}
+input[type=file]{display:none}.tablewrap{overflow:auto;max-height:430px}table{width:100%;border-collapse:collapse;min-width:650px}th,td{padding:10px 8px;border-bottom:1px solid #eee;text-align:left}th{font-size:13px;color:#667085;position:sticky;top:0;background:#fff}
+.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;background:#ecfdf3;color:#027a48}.badge.off{background:#f2f4f7;color:#667085}
+.notice{margin-top:10px;padding:11px 13px;background:#fff7ed;color:#9a3412;border-radius:10px;font-size:14px}.success{background:#ecfdf3;color:#027a48}
+.hidden{display:none}.section{display:none}.section.active{display:block}.empty{padding:25px;text-align:center;color:#98a2b3}
+#setup{position:fixed;inset:0;background:#f5f7fb;z-index:20;display:flex;align-items:center;justify-content:center;padding:18px}.setupbox{max-width:600px;width:100%;background:#fff;border-radius:20px;padding:24px;box-shadow:0 10px 40px #0002}
+code{background:#f2f4f7;padding:2px 5px;border-radius:5px}
+@media(max-width:650px){.grid,.stats{grid-template-columns:1fr}.book{font-size:23px}}
+</style>
+</head>
+<body>
+
+<div id="setup">
+ <div class="setupbox">
+  <h2 style="margin-top:0">☁️ 공유형 책 추첨기 연결</h2>
+  <p>처음 한 번만 Supabase 프로젝트의 URL과 <b>Publishable key</b>를 입력하면 됩니다. 이 값은 브라우저에서 사용하는 공개용 키입니다. <b>service_role 키는 절대 입력하지 마세요.</b></p>
+  <input id="sbUrl" placeholder="https://xxxxxxxx.supabase.co" style="width:100%;margin:5px 0">
+  <input id="sbKey" placeholder="Supabase Publishable key" style="width:100%;margin:5px 0">
+  <div class="actions"><button class="primary" id="connect">연결하기</button></div>
+  <div id="setupMsg" class="notice hidden"></div>
+  <p class="muted">DB 테이블 생성은 함께 제공되는 <code>supabase_setup.sql</code>을 Supabase SQL Editor에서 한 번 실행하면 됩니다.</p>
+ </div>
+</div>
+
+<div class="wrap">
+<h1>📚 공유 책 랜덤 추첨기</h1>
+<div class="sub">어떤 기기에서 추첨해도 같은 책 목록과 당첨 기록이 반영됩니다.</div>
+
+<div class="card">
+ <div class="row">
+  <div class="tabs">
+   <button class="tab on" data-tab="drawTab">🎲 추첨</button>
+   <button class="tab" data-tab="booksTab">📚 책 관리</button>
+   <button class="tab" data-tab="historyTab">🏆 당첨 기록</button>
+  </div>
+  <div class="actions" style="margin:0"><span id="roomStatus" class="muted">연결 중...</span><button id="shareRoom" class="gray">🔗 공유 링크 복사</button></div>
+ </div>
+</div>
+
+<section id="drawTab" class="section active">
+<div class="card">
+ <div class="stats">
+  <div class="stat">전체 책 수<b id="total">0</b></div>
+  <div class="stat">추첨 가능<b id="remain">0</b></div>
+  <div class="stat">당첨 수<b id="won">0</b></div>
+ </div>
+ <button id="draw" class="primary" style="width:100%;font-size:21px;padding:17px;margin-top:15px" disabled>🎲 랜덤으로 한 권 뽑기</button>
+ <div id="winner" class="winner empty">연결 후 책을 추가해주세요.</div>
+ <div class="actions"><button id="reload" class="gray">🔄 새로고침</button></div>
+</div>
+</section>
+
+<section id="booksTab" class="section">
+<div class="card">
+ <h2 style="margin-top:0">➕ 책 직접 추가</h2>
+ <div class="grid"><input id="titleInput" placeholder="책 제목"><input id="authorInput" placeholder="저자 (선택)"></div>
+ <div class="actions"><button id="addBook" class="primary">책 추가</button></div>
+</div>
+<div class="card">
+ <h2 style="margin-top:0">📥 엑셀로 책 추가</h2>
+ <div class="drop" id="drop"><b>엑셀 파일을 끌어놓거나 눌러서 선택</b><br><span class="muted">.xlsx / .xls / .csv · 기존 책은 유지됩니다.</span><input id="file" type="file" accept=".xlsx,.xls,.csv"></div>
+ <div id="fileInfo" class="muted" style="margin-top:10px"></div>
+</div>
+<div class="card">
+ <div class="row"><h2 style="margin:0">📚 현재 책 목록</h2><span class="muted">모든 기기에서 공유됩니다.</span></div>
+ <input id="search" placeholder="제목 또는 저자로 검색" style="width:100%;margin:12px 0">
+ <div class="tablewrap" id="bookTable"></div>
+</div>
+</section>
+
+<section id="historyTab" class="section">
+<div class="card">
+ <div class="row"><h2 style="margin:0">🏆 당첨 기록</h2><button id="csv" class="green">당첨 기록 CSV 저장</button></div>
+ <div id="historyTable" style="margin-top:14px"></div>
+</div>
+</section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+let sb=null;
+const urlRoom=new URLSearchParams(location.search).get("room");
+let roomId=urlRoom||localStorage.getItem("bookDrawRoom")||crypto.randomUUID();
+let books=[], history=[];
+const $=id=>document.getElementById(id), esc=s=>String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+localStorage.setItem("bookDrawRoom",roomId);
+if(!urlRoom && history.length===0 && location.protocol!=="file:"){
+  const u=new URL(location.href); u.searchParams.set("room",roomId);
+  history.replaceState({}, "", u);
+}
+
+$("shareRoom").onclick=async()=>{
+ const u=new URL(location.href);
+ u.searchParams.set("room",roomId);
+ try{
+   await navigator.clipboard.writeText(u.toString());
+   alert("공유 링크를 복사했습니다. 이 링크를 아이폰/다른 안드로이드에 보내면 같은 책 목록을 사용합니다.");
+ }catch(e){
+   prompt("아래 링크를 복사해서 공유하세요.",u.toString());
+ }
+};
+async function connect(){
+ const url=$("sbUrl").value.trim().replace(/\/$/,""), key=$("sbKey").value.trim();
+ if(!url||!key){$("setupMsg").textContent="URL과 Publishable key를 입력해주세요.";$("setupMsg").className="notice";return}
+ localStorage.setItem("sbUrl",url);localStorage.setItem("sbKey",key);
+ sb=window.supabase.createClient(url,key);
+ try{await loadAll();$("setup").style.display="none";$("roomStatus").textContent="☁️ 공유 저장 연결됨";subscribe();}
+ catch(e){$("setupMsg").textContent="연결 실패: "+e.message+" · SQL 설정이 되어 있는지 확인해주세요.";$("setupMsg").className="notice"}
+}
+function alreadyConfigured(){return localStorage.getItem("sbUrl")&&localStorage.getItem("sbKey")}
+async function loadAll(){
+ const b=await sb.from("books").select("*").eq("room_id",roomId).order("created_at",{ascending:true});if(b.error)throw b.error;
+ const h=await sb.from("draws").select("*").eq("room_id",roomId).order("drawn_at",{ascending:true});if(h.error)throw h.error;
+ books=b.data||[];history=h.data||[];render();
+}
+function subscribe(){
+ sb.channel("room-"+roomId)
+ .on("postgres_changes",{event:"*",schema:"public",table:"books",filter:"room_id=eq."+roomId},()=>loadAll())
+ .on("postgres_changes",{event:"*",schema:"public",table:"draws",filter:"room_id=eq."+roomId},()=>loadAll())
+ .subscribe();
+}
+function remaining(){const ids=new Set(history.map(x=>x.book_id));return books.filter(b=>!ids.has(b.id))}
+function render(){
+ const pool=remaining();$("total").textContent=books.length;$("remain").textContent=pool.length;$("won").textContent=history.length;$("draw").disabled=!pool.length;
+ const last=history[history.length-1];
+ if(last){$("winner").className="winner";$("winner").innerHTML=`<div><div class="book">📖 ${esc(last.title)}</div>${last.author?`<div class="author">${esc(last.author)}</div>`:""}<div class="muted" style="margin-top:10px">당첨 처리되어 자동 제외됨</div></div>`}
+ else{$("winner").className="winner empty";$("winner").textContent=books.length?"추첨 버튼을 눌러주세요.":"책을 추가해주세요."}
+ renderBooks();renderHistory();
+}
+function renderBooks(){
+ const q=$("search").value.trim().toLowerCase(), arr=books.filter(b=>(b.title+" "+(b.author||"")).toLowerCase().includes(q)), wonIds=new Set(history.map(x=>x.book_id));
+ if(!arr.length){$("bookTable").innerHTML='<div class="empty">등록된 책이 없습니다.</div>';return}
+ let h="<table><thead><tr><th>책 제목</th><th>저자</th><th>상태</th><th></th></tr></thead><tbody>";
+ arr.forEach(b=>h+=`<tr><td>${esc(b.title)}</td><td>${esc(b.author||"-")}</td><td><span class="badge ${wonIds.has(b.id)?"off":""}">${wonIds.has(b.id)?"당첨·제외":"추첨 가능"}</span></td><td><button class="danger del" data-id="${b.id}">삭제</button></td></tr>`);
+ $("bookTable").innerHTML=h+"</tbody></table>";
+ document.querySelectorAll(".del").forEach(x=>x.onclick=async()=>{if(confirm("이 책을 삭제할까요?")){const r=await sb.from("books").delete().eq("id",x.dataset.id).eq("room_id",roomId);if(r.error)alert(r.error.message);else loadAll()}});
+}
+function renderHistory(){
+ if(!history.length){$("historyTable").innerHTML='<div class="empty">아직 당첨 기록이 없습니다.</div>';return}
+ let h='<div class="tablewrap"><table><thead><tr><th>#</th><th>책 제목</th><th>저자</th><th>당첨 시각</th></tr></thead><tbody>';
+ [...history].reverse().forEach((x,i)=>h+=`<tr><td>${history.length-i}</td><td>${esc(x.title)}</td><td>${esc(x.author||"-")}</td><td>${new Date(x.drawn_at).toLocaleString("ko-KR")}</td></tr>`);
+ $("historyTable").innerHTML=h+"</tbody></table></div>";
+}
+async function addBooks(list){
+ const clean=list.map(x=>({room_id:roomId,title:String(x.title||"").trim(),author:String(x.author||"").trim()})).filter(x=>x.title);
+ if(!clean.length)return;
+ const r=await sb.from("books").upsert(clean,{onConflict:"room_id,title,author",ignoreDuplicates:true});
+ if(r.error)alert(r.error.message);else loadAll();
+}
+$("connect").onclick=connect;
+$("addBook").onclick=()=>{const t=$("titleInput").value.trim(),a=$("authorInput").value.trim();if(!t)return alert("책 제목을 입력해주세요.");addBooks([{title:t,author:a}]);$("titleInput").value="";$("authorInput").value=""};
+$("search").oninput=renderBooks;
+$("reload").onclick=loadAll;
+$("draw").onclick=async()=>{
+ $("draw").disabled=true;
+ const r=await sb.rpc("draw_random_book",{p_room_id:roomId});
+ if(r.error){alert("추첨 실패: "+r.error.message)} else if(!r.data){alert("추첨할 책이 없습니다.")} else await loadAll();
+};
+async function readExcel(file){
+ try{const wb=XLSX.read(await file.arrayBuffer()),ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+ const hs=Object.keys(rows[0]||{}),find=names=>names.map(n=>hs.find(h=>String(h).trim().toLowerCase()===n)).find(Boolean);
+ const tc=find(["제목","도서명","책제목","책 제목","title","book","name"])||hs[0],ac=find(["저자","작가","author","writer"]);
+ await addBooks(rows.map(r=>({title:r[tc],author:ac?r[ac]:""})));$("fileInfo").textContent=`${file.name} · ${rows.length}행 처리 완료`;
+ }catch(e){alert("엑셀 읽기 실패: "+e.message)}
+}
+$("file").onchange=e=>e.target.files[0]&&readExcel(e.target.files[0]);$("drop").onclick=()=>$("file").click();
+["dragenter","dragover"].forEach(ev=>$("drop").addEventListener(ev,e=>{e.preventDefault();$("drop").classList.add("drag")}));
+["dragleave","drop"].forEach(ev=>$("drop").addEventListener(ev,e=>{e.preventDefault();$("drop").classList.remove("drag")}));
+$("drop").ondrop=e=>{const f=e.dataTransfer.files[0];if(f)readExcel(f)};
+$("csv").onclick=()=>{
+ if(!history.length)return;const rows=[["당첨 시각","책 제목","저자"],...history.map(x=>[new Date(x.drawn_at).toLocaleString("ko-KR"),x.title,x.author||""])];
+ const csv="\uFEFF"+rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n"),a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));a.download="책_당첨기록.csv";a.click();
+};
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));t.classList.add("on");document.querySelectorAll(".section").forEach(x=>x.classList.remove("active"));$(t.dataset.tab).classList.add("active")});
+if(alreadyConfigured()){ $("sbUrl").value=localStorage.getItem("sbUrl");$("sbKey").value=localStorage.getItem("sbKey");connect(); }
+</script>
+</body></html>
